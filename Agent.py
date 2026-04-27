@@ -136,18 +136,26 @@ If patient asks about symptoms, give basic advice and suggest booking.
 Always be warm, professional, and efficient."""
 
 
+PRIMARY_MODEL  = "llama-3.3-70b-versatile"
+FALLBACK_MODEL = "llama-3.1-8b-instant"
+
 def call_groq(messages: list, temperature: float = 0.3) -> str:
-    """Call Groq AI and return response text."""
-    try:
-        resp = groq_client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=messages,
-            temperature=temperature,
-            max_tokens=1500,
-        )
-        return resp.choices[0].message.content
-    except Exception as e:
-        return json.dumps({"thought": "Error", "action": None, "response": f"AI error: {str(e)}", "send_whatsapp": False, "whatsapp_phone": None, "whatsapp_message": None})
+    """Call Groq AI with automatic fallback to 8b if 70b fails."""
+    last_error = ""
+    for model in (PRIMARY_MODEL, FALLBACK_MODEL):
+        try:
+            resp = groq_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=1500,
+            )
+            return resp.choices[0].message.content
+        except Exception as e:
+            last_error = str(e)
+            if model == PRIMARY_MODEL:
+                print(f"[ClinicAI] Primary model failed ({last_error}), retrying with fallback {FALLBACK_MODEL}...")
+    return json.dumps({"thought": "Error", "action": None, "response": f"AI error: {last_error}", "send_whatsapp": False, "whatsapp_phone": None, "whatsapp_message": None})
 
 
 def parse_agent_response(raw: str) -> dict:
@@ -303,12 +311,7 @@ async def send_whatsapp_async(phone: str, message: str) -> dict:
 
 def send_whatsapp(phone: str, message: str) -> dict:
     import asyncio
-    try:
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(send_whatsapp_async(phone, message))
-    except:
-        import asyncio
-        return asyncio.run(send_whatsapp_async(phone, message))
+    return asyncio.run(send_whatsapp_async(phone, message))
 
 
 # ════════════════════════════════════════════════════════════
