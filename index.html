@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ClinicAI Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#070c09;--s1:#0e1510;--s2:#141f16;--s3:#1a271c;
+  --b1:#1e2b20;--b2:#243028;--b3:#2c3c2f;
+  --accent:#3dff7a;--accent2:#2acc60;--glow:rgba(61,255,122,.12);
+  --t1:#e8f0ea;--t2:#8fa893;--t3:#5a6e5d;--t4:#3a4e3d;
+  --red:#ff4d6a;--yellow:#ffd166;--blue:#5bc4ff;--purple:#c084fc;
+  --r:12px;--rs:8px;
+}
+body{background:var(--bg);color:var(--t1);font-family:'DM Sans',sans-serif;font-size:14px;min-height:100vh;display:flex;overflow:hidden}
+/* ── Sidebar ── */
+.sidebar{width:230px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--b1);display:flex;flex-direction:column;padding:20px 0;height:100vh;position:fixed;z-index:100}
+.logo{padding:0 18px 20px;border-bottom:1px solid var(--b1);margin-bottom:14px}
+.logo-wrap{display:flex;align-items:center;gap:9px}
+.logo-icon{width:30px;height:30px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:var(--bg)}
+.logo-name{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;color:var(--accent);letter-spacing:-.5px}
+.logo-sub{font-size:11px;color:var(--t3);margin-top:3px;letter-spacing:.3px}
+.nav{padding:0 10px;flex:1}
+.nav-label{font-size:10px;font-weight:600;color:var(--t4);text-transform:uppercase;letter-spacing:1.2px;padding:0 8px 8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--rs);cursor:pointer;color:var(--t2);font-size:13.5px;margin-bottom:2px;border:1px solid transparent;transition:all .15s;user-select:none}
+.nav-item:hover{background:var(--s2);color:var(--t1)}
+.nav-item.active{background:var(--glow);color:var(--accent);border-color:rgba(61,255,122,.2);font-weight:500}
+.nav-icon{font-size:16px;width:20px;text-align:center}
+.sidebar-footer{padding:14px 18px 0;border-top:1px solid var(--b1);margin-top:auto}
+.clinic-pill{background:var(--s2);border:1px solid var(--b2);border-radius:var(--rs);padding:10px 12px}
+.clinic-name{font-weight:600;font-size:13px}
+.clinic-status{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--accent);margin-top:3px}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+/* ── Main ── */
+.main{margin-left:230px;flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+/* ── Pages ── */
+.page{display:none;flex-direction:column;flex:1;overflow:hidden}
+.page.active{display:flex}
+/* ── Page Header ── */
+.page-header{padding:22px 28px 18px;border-bottom:1px solid var(--b1);display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0}
+.page-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;letter-spacing:-.5px}
+.page-sub{font-size:12.5px;color:var(--t3);margin-top:3px}
+/* ── Agent Chat ── */
+.chat-wrap{display:flex;flex-direction:column;flex:1;overflow:hidden}
+.chat-messages{flex:1;overflow-y:auto;padding:20px 28px;display:flex;flex-direction:column;gap:14px}
+.msg{display:flex;gap:10px;max-width:82%}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.msg-avatar{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.msg.agent .msg-avatar{background:var(--glow);border:1px solid rgba(61,255,122,.2)}
+.msg.user .msg-avatar{background:rgba(91,196,255,.1);border:1px solid rgba(91,196,255,.2)}
+.msg-body{background:var(--s2);border:1px solid var(--b2);border-radius:14px;padding:11px 14px;font-size:13.5px;line-height:1.55}
+.msg.user .msg-body{background:rgba(61,255,122,.08);border-color:rgba(61,255,122,.15)}
+.msg-meta{font-size:11px;color:var(--t3);margin-top:5px}
+.msg-thought{font-size:11.5px;color:var(--t3);font-style:italic;margin-bottom:6px;padding:6px 10px;background:rgba(255,255,255,.03);border-radius:6px;border-left:2px solid var(--b3)}
+.msg-action{display:inline-flex;align-items:center;gap:5px;margin-top:7px;font-size:11.5px;background:var(--glow);color:var(--accent);padding:3px 9px;border-radius:20px;border:1px solid rgba(61,255,122,.2)}
+.msg-wa{display:inline-flex;align-items:center;gap:5px;margin-top:5px;font-size:11.5px;background:rgba(37,211,102,.1);color:#25d366;padding:3px 9px;border-radius:20px;border:1px solid rgba(37,211,102,.2)}
+.chat-input-wrap{padding:16px 28px;border-top:1px solid var(--b1);display:flex;gap:10px;flex-shrink:0}
+.chat-input{flex:1;background:var(--s2);border:1px solid var(--b2);border-radius:var(--rs);padding:11px 14px;color:var(--t1);font-size:13.5px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;resize:none;max-height:120px;min-height:44px}
+.chat-input:focus{border-color:var(--accent)}
+.chat-input::placeholder{color:var(--t3)}
+.btn-send{background:var(--accent);color:var(--bg);border:none;border-radius:var(--rs);padding:11px 18px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap}
+.btn-send:hover{background:#52ff8f;transform:translateY(-1px)}
+.btn-send:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.quick-actions{display:flex;gap:8px;padding:10px 28px 0;flex-wrap:wrap;flex-shrink:0}
+.quick-btn{background:transparent;border:1px solid var(--b2);color:var(--t2);border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif}
+.quick-btn:hover{background:var(--glow);color:var(--accent);border-color:rgba(61,255,122,.3)}
+/* ── Stats ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:20px 28px;flex-shrink:0}
+.stat-card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:16px 18px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);opacity:.5}
+.stat-card.blue::before{background:var(--blue)}
+.stat-card.yellow::before{background:var(--yellow)}
+.stat-card.purple::before{background:var(--purple)}
+.stat-icon{position:absolute;right:14px;top:14px;font-size:20px;opacity:.18}
+.stat-label{font-size:10.5px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.8px}
+.stat-value{font-family:'Syne',sans-serif;font-size:30px;font-weight:700;color:var(--t1);margin:5px 0 1px;line-height:1}
+.stat-sub{font-size:11.5px;color:var(--t3)}
+/* ── Content area ── */
+.content-area{flex:1;overflow-y:auto;padding:20px 28px}
+/* ── Cards ── */
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:18px 20px;margin-bottom:14px}
+.card-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:7px}
+/* ── Table ── */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:9px 13px;font-size:10.5px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--b1)}
+td{padding:12px 13px;font-size:13.5px;border-bottom:1px solid var(--b1)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--s2)}
+.td-sub{font-size:12px;color:var(--t2);margin-top:2px}
+/* ── Badge ── */
+.badge{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:500}
+.badge-green{background:rgba(61,255,122,.1);color:var(--accent)}
+.badge-blue{background:rgba(91,196,255,.1);color:var(--blue)}
+.badge-red{background:rgba(255,77,106,.1);color:var(--red)}
+.badge-yellow{background:rgba(255,209,102,.1);color:var(--yellow)}
+.badge-gray{background:var(--s2);color:var(--t3)}
+/* ── Form ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-field{display:flex;flex-direction:column;gap:5px}
+.form-field.span-2{grid-column:span 2}
+label{font-size:11.5px;font-weight:500;color:var(--t2)}
+input,select,textarea{background:var(--bg);border:1px solid var(--b2);border-radius:var(--rs);padding:9px 11px;color:var(--t1);font-size:13.5px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+input::placeholder,textarea::placeholder{color:var(--t3)}
+select option{background:var(--s1)}
+input[type="datetime-local"]{color-scheme:dark}
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border-radius:var(--rs);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;transition:all .15s}
+.btn-primary{background:var(--accent);color:var(--bg)}
+.btn-primary:hover{background:#52ff8f}
+.btn-ghost{background:transparent;color:var(--t2);border:1px solid var(--b2)}
+.btn-ghost:hover{background:var(--s2);color:var(--t1)}
+.btn-danger{background:rgba(255,77,106,.1);color:var(--red);border:1px solid rgba(255,77,106,.2)}
+/* ── Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal{background:var(--s1);border:1px solid var(--b2);border-radius:16px;padding:24px;width:460px;max-width:95vw;max-height:85vh;overflow-y:auto;animation:slideUp .2s ease}
+@keyframes slideUp{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between}
+.modal-close{cursor:pointer;color:var(--t3);font-size:18px}
+.modal-close:hover{color:var(--t1)}
+/* ── Toast ── */
+.toast{position:fixed;bottom:22px;right:22px;background:var(--s2);border:1px solid var(--b2);border-radius:var(--rs);padding:11px 15px;font-size:13.5px;display:flex;align-items:center;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.4);animation:slideUp .2s ease;z-index:2000}
+/* ── Patient chat ── */
+.patient-list{display:flex;flex-direction:column;gap:0}
+.patient-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--b1);cursor:pointer}
+.patient-item:hover{opacity:.8}
+.avatar{width:36px;height:36px;border-radius:10px;background:var(--glow);border:1px solid rgba(61,255,122,.2);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:var(--accent);flex-shrink:0}
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:3px}
+/* ── Typing indicator ── */
+.typing{display:flex;gap:4px;align-items:center;padding:4px 0}
+.typing span{width:7px;height:7px;border-radius:50%;background:var(--accent);opacity:.4;animation:blink 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.4}50%{opacity:1}}
+/* ── Empty ── */
+.empty{text-align:center;padding:40px 20px;color:var(--t3)}
+.empty-icon{font-size:32px;opacity:.3;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="logo">
+    <div class="logo-wrap">
+      <div class="logo-icon">C</div>
+      <div>
+        <div class="logo-name">ClinicAI</div>
+      </div>
+    </div>
+    <div class="logo-sub">AI-Powered Clinic Agent</div>
+  </div>
+  <div class="nav">
+    <div class="nav-label">Navigation</div>
+    <div class="nav-item active" onclick="showPage('agent')"><span class="nav-icon">🤖</span>AI Agent</div>
+    <div class="nav-item" onclick="showPage('dashboard')"><span class="nav-icon">🏠</span>Dashboard</div>
+    <div class="nav-item" onclick="showPage('patients')"><span class="nav-icon">👥</span>Patients</div>
+    <div class="nav-item" onclick="showPage('appointments')"><span class="nav-icon">📅</span>Appointments</div>
+    <div class="nav-item" onclick="showPage('prescriptions')"><span class="nav-icon">💊</span>Prescriptions</div>
+    <div class="nav-item" onclick="showPage('messages')"><span class="nav-icon">💬</span>Patient Messages</div>
+    <div class="nav-item" onclick="showPage('whatsapp')"><span class="nav-icon">📲</span>WhatsApp</div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="clinic-pill">
+      <div class="clinic-name">City Clinic</div>
+      <div class="clinic-status"><span class="status-dot"></span>AI Agent Active</div>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- ══ PAGE: AI AGENT ══ -->
+  <div class="page active" id="page-agent">
+    <div class="page-header">
+      <div>
+        <div class="page-title">🤖 AI Agent</div>
+        <div class="page-sub">Tell the agent anything — it will handle it automatically</div>
+      </div>
+    </div>
+    <div class="quick-actions">
+      <button class="quick-btn" onclick="quickSend('Show me today\'s appointments')">📅 Today's appointments</button>
+      <button class="quick-btn" onclick="quickSend('How many patients do we have?')">👥 Patient count</button>
+      <button class="quick-btn" onclick="quickSend('Send appointment reminders to all patients scheduled today via WhatsApp')">📲 Send reminders</button>
+      <button class="quick-btn" onclick="quickSend('Give me a full clinic report for today')">📊 Clinic report</button>
+      <button class="quick-btn" onclick="quickSend('List all prescriptions written this week')">💊 Prescriptions</button>
+    </div>
+    <div class="chat-wrap">
+      <div class="chat-messages" id="chat-messages">
+        <div class="msg agent">
+          <div class="msg-avatar">🤖</div>
+          <div>
+            <div class="msg-body">
+              Namaste Doctor! 🙏 I'm your AI clinic agent. I can:<br><br>
+              • 📅 Book & manage appointments<br>
+              • 👥 Register & track patients<br>
+              • 💊 Write prescriptions<br>
+              • 📲 Send WhatsApp reminders<br>
+              • 💬 Answer patient queries<br>
+              • 📊 Give clinic reports<br><br>
+              Just tell me what you need in plain language!
+            </div>
+            <div class="msg-meta">ClinicAI Agent • Just now</div>
+          </div>
+        </div>
+      </div>
+      <div class="chat-input-wrap">
+        <textarea class="chat-input" id="agent-input" placeholder="e.g. Book an appointment for Priya Sharma (9876543210) tomorrow at 10am for fever..." rows="1" onkeydown="handleKey(event)"></textarea>
+        <button class="btn-send" id="send-btn" onclick="sendToAgent()">Send ↑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ PAGE: DASHBOARD ══ -->
+  <div class="page" id="page-dashboard">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub" id="dash-date"></div>
+      </div>
+      <button class="btn btn-ghost" onclick="loadDashboard()">↻ Refresh</button>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">Total Patients</div><div class="stat-value" id="stat-patients">—</div><div class="stat-sub">Registered</div></div>
+      <div class="stat-card blue"><div class="stat-icon">📅</div><div class="stat-label">Today's Queue</div><div class="stat-value" id="stat-today">—</div><div class="stat-sub">Appointments</div></div>
+      <div class="stat-card yellow"><div class="stat-icon">🗓</div><div class="stat-label">Total Appointments</div><div class="stat-value" id="stat-appts">—</div><div class="stat-sub">All time</div></div>
+      <div class="stat-card purple"><div class="stat-icon">💊</div><div class="stat-label">Prescriptions</div><div class="stat-value" id="stat-rx">—</div><div class="stat-sub">Written</div></div>
+    </div>
+    <div class="content-area">
+      <div class="card">
+        <div class="card-title">📅 Today's Appointments</div>
+        <div id="today-appts-list"><div class="empty"><div class="empty-icon">📅</div>Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ PAGE: PATIENTS ══ -->
+  <div class="page" id="page-patients">
+    <div class="page-header">
+      <div><div class="page-title">Patients</div><div class="page-sub" id="patients-count">Loading...</div></div>
+      <button class="btn btn-primary" onclick="showAddPatient()">+ Register Patient</button>
+    </div>
+    <div class="content-area">
+      <div class="card" style="padding:0;overflow:hidden">
+        <table>
+          <thead><tr><th>Patient</th><th>Phone</th><th>Age/Gender</th><th>Blood Group</th><th>Address</th><th>Registered</th></tr></thead>
+          <tbody id="patients-table"><tr><td colspan="6"><div class="empty"><div class="empty-icon">👥</div>Loading patients...</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ PAGE: APPOINTMENTS ══ -->
+  <div class="page" id="page-appointments">
+    <div class="page-header">
+      <div><div class="page-title">Appointments</div><div class="page-sub">Manage all appointments</div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="date" id="appt-date-filter" style="width:160px;font-size:12.5px" onchange="loadAppointments()"/>
+        <button class="btn btn-primary" onclick="showBookModal()">+ Book Appointment</button>
+      </div>
+    </div>
+    <div class="content-area">
+      <div id="appts-list"></div>
+    </div>
+  </div>
+
+  <!-- ══ PAGE: PRESCRIPTIONS ══ -->
+  <div class="page" id="page-prescriptions">
+    <div class="page-header">
+      <div><div class="page-title">Prescriptions</div><div class="page-sub">All written prescriptions</div></div>
+    </div>
+    <div class="content-area">
+      <div id="rx-list"></div>
+    </div>
+  </div>
+
+  <!-- ══ PAGE: PATIENT MESSAGES ══ -->
+  <div class="page" id="page-messages">
+    <div class="page-header">
+      <div><div class="page-title">Patient Messages</div><div class="page-sub">Incoming messages from patients — AI auto-replies via WhatsApp</div></div>
+    </div>
+    <div class="content-area">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title">📨 Simulate Patient Message</div>
+        <div class="form-grid">
+          <div class="form-field"><label>Patient Name</label><input id="pm-name" placeholder="Patient's name"/></div>
+          <div class="form-field"><label>Phone</label><input id="pm-phone" placeholder="9876543210"/></div>
+          <div class="form-field span-2"><label>Message</label><input id="pm-msg" placeholder="I have fever since 2 days, should I come today?"/></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" onclick="sendPatientMessage()">📲 Send & AI Auto-Reply</button></div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <table>
+          <thead><tr><th>Patient</th><th>Phone</th><th>Message</th><th>Time</th></tr></thead>
+          <tbody id="messages-table"><tr><td colspan="4"><div class="empty"><div class="empty-icon">💬</div>No messages yet</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ PAGE: WHATSAPP ══ -->
+  <div class="page" id="page-whatsapp">
+    <div class="page-header">
+      <div><div class="page-title">WhatsApp Broadcast</div><div class="page-sub">Send messages to patients manually</div></div>
+    </div>
+    <div class="content-area">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-title">📋 Compose Message</div>
+          <div class="form-field" style="margin-bottom:12px"><label>Phone Number</label><input id="wa-phone" placeholder="9876543210"/></div>
+          <div class="form-field" style="margin-bottom:12px"><label>Message</label><textarea id="wa-msg" placeholder="Type your message..." style="min-height:100px;resize:none"></textarea></div>
+          <button class="btn btn-primary" onclick="sendWhatsApp()" style="width:100%">📲 Send via WhatsApp</button>
+        </div>
+        <div class="card">
+          <div class="card-title">⚡ Quick Templates</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-ghost" style="justify-content:flex-start;text-align:left" onclick="setTemplate('reminder')">⏰ Appointment Reminder</button>
+            <button class="btn btn-ghost" style="justify-content:flex-start;text-align:left" onclick="setTemplate('followup')">🔄 Follow-up Message</button>
+            <button class="btn btn-ghost" style="justify-content:flex-start;text-align:left" onclick="setTemplate('report')">📋 Report Ready</button>
+            <button class="btn btn-ghost" style="justify-content:flex-start;text-align:left" onclick="setTemplate('holiday')">🏖 Holiday Notice</button>
+          </div>
+          <div style="margin-top:14px;padding:12px;background:var(--bg);border:1px solid var(--b2);border-radius:var(--rs);font-size:12.5px;color:var(--t2);line-height:1.6" id="wa-preview">Select a template to preview</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <div class="card-title">🤖 Let AI Send Bulk Messages</div>
+        <p style="color:var(--t2);font-size:13px;margin-bottom:12px">Tell the AI agent to send messages — e.g. "Send appointment reminders to all patients scheduled today"</p>
+        <button class="btn btn-primary" onclick="showPage('agent');quickSend('Send WhatsApp reminders to all patients with appointments today')">Open Agent →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="add-patient-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Register New Patient <span class="modal-close" onclick="closeModal('add-patient-modal')">✕</span></div>
+    <div class="form-grid">
+      <div class="form-field span-2"><label>Full Name *</label><input id="ap-name" placeholder="e.g. Priya Sharma"/></div>
+      <div class="form-field"><label>Phone *</label><input id="ap-phone" placeholder="10-digit mobile"/></div>
+      <div class="form-field"><label>Age</label><input id="ap-age" type="number" placeholder="years"/></div>
+      <div class="form-field"><label>Gender</label><select id="ap-gender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+      <div class="form-field"><label>Blood Group</label><select id="ap-blood"><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div>
+      <div class="form-field span-2"><label>Address</label><input id="ap-address" placeholder="Area, City"/></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('add-patient-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="addPatient()">Register Patient</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="book-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Book Appointment <span class="modal-close" onclick="closeModal('book-modal')">✕</span></div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="form-field"><label>Patient Phone *</label><input id="bk-phone" placeholder="Patient's phone number"/></div>
+      <div class="form-field"><label>Date & Time *</label><input id="bk-time" type="datetime-local"/></div>
+      <div class="form-field"><label>Reason</label><input id="bk-reason" placeholder="e.g. Fever, BP checkup, Follow-up"/></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('book-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="bookViaAgent()">Book via AI Agent</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8000'
+let agentBusy = false
+
+// ── Navigation ─────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+  document.getElementById('page-' + name).classList.add('active')
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.textContent.toLowerCase().includes(name === 'agent' ? 'ai agent' : name === 'messages' ? 'patient messages' : name === 'whatsapp' ? 'whatsapp' : name)) n.classList.add('active')
+  })
+  if (name === 'dashboard') loadDashboard()
+  if (name === 'patients') loadPatients()
+  if (name === 'appointments') { document.getElementById('appt-date-filter').value = today(); loadAppointments() }
+  if (name === 'prescriptions') loadPrescriptions()
+  if (name === 'messages') loadMessages()
+}
+
+function today() { return new Date().toISOString().split('T')[0] }
+
+// ── Agent Chat ─────────────────────────────────────────────
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendToAgent() }
+}
+
+function quickSend(msg) {
+  document.getElementById('agent-input').value = msg
+  sendToAgent()
+}
+
+async function sendToAgent() {
+  if (agentBusy) return
+  const input = document.getElementById('agent-input')
+  const msg = input.value.trim()
+  if (!msg) return
+
+  input.value = ''
+  agentBusy = true
+  document.getElementById('send-btn').disabled = true
+
+  appendMsg('user', msg, {})
+
+  // Typing indicator
+  const typingId = 'typing-' + Date.now()
+  const chatMsgs = document.getElementById('chat-messages')
+  chatMsgs.innerHTML += `
+    <div class="msg agent" id="${typingId}">
+      <div class="msg-avatar">🤖</div>
+      <div class="msg-body"><div class="typing"><span></span><span></span><span></span></div></div>
+    </div>`
+  chatMsgs.scrollTop = chatMsgs.scrollHeight
+
+  try {
+    const res = await fetch(`${API}/agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, context: 'doctor' })
+    })
+    const data = await res.json()
+    document.getElementById(typingId)?.remove()
+    appendMsg('agent', data.response || 'Done.', data)
+  } catch (e) {
+    document.getElementById(typingId)?.remove()
+    appendMsg('agent', '⚠️ Could not reach the agent. Make sure agent.py is running on port 8000.', {})
+  }
+
+  agentBusy = false
+  document.getElementById('send-btn').disabled = false
+  input.focus()
+}
+
+function appendMsg(role, text, data) {
+  const chatMsgs = document.getElementById('chat-messages')
+  const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  const isUser = role === 'user'
+
+  let extras = ''
+  if (data.thought && !isUser) extras += `<div class="msg-thought">💭 ${data.thought}</div>`
+  if (data.action && data.action !== 'null' && !isUser) extras += `<div class="msg-action">⚡ Action: ${data.action}</div>`
+  if (data.whatsapp_sent && !isUser) extras += `<div class="msg-wa">✓ WhatsApp sent</div>`
+
+  chatMsgs.innerHTML += `
+    <div class="msg ${role}">
+      <div class="msg-avatar">${isUser ? '👨‍⚕️' : '🤖'}</div>
+      <div>
+        ${extras}
+        <div class="msg-body">${text.replace(/\n/g,'<br>')}</div>
+        <div class="msg-meta">${isUser ? 'You' : 'ClinicAI'} • ${time}</div>
+      </div>
+    </div>`
+  chatMsgs.scrollTop = chatMsgs.scrollHeight
+}
+
+// ── Dashboard ──────────────────────────────────────────────
+async function loadDashboard() {
+  document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+  try {
+    const stats = await fetch(`${API}/api/stats`).then(r => r.json())
+    document.getElementById('stat-patients').textContent = stats.total_patients
+    document.getElementById('stat-today').textContent = stats.today_appointments
+    document.getElementById('stat-appts').textContent = stats.total_appointments
+    document.getElementById('stat-rx').textContent = stats.total_prescriptions
+
+    const appts = await fetch(`${API}/api/appointments?date=${today()}`).then(r => r.json())
+    const el = document.getElementById('today-appts-list')
+    if (!appts.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">📅</div>No appointments today</div>'; return }
+    el.innerHTML = appts.map(a => `
+      <div style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--b1)">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:16px;min-width:64px">${fmtTime(a.scheduled_at)}</div>
+        <div style="flex:1"><div style="font-weight:500">${a.patient_name||'—'}</div><div style="font-size:12px;color:var(--t2);margin-top:2px">${a.reason||'General checkup'}</div></div>
+        <span class="badge badge-${a.status==='scheduled'?'blue':a.status==='completed'?'green':'red'}">${a.status}</span>
+      </div>`).join('')
+  } catch(e) { console.error(e) }
+}
+
+// ── Patients ───────────────────────────────────────────────
+async function loadPatients() {
+  const data = await fetch(`${API}/api/patients`).then(r => r.json()).catch(()=>[])
+  document.getElementById('patients-count').textContent = `${data.length} registered patients`
+  const tb = document.getElementById('patients-table')
+  if (!data.length) { tb.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">👥</div>No patients yet</div></td></tr>'; return }
+  tb.innerHTML = data.map(p => `
+    <tr>
+      <td><div style="display:flex;align-items:center;gap:9px"><div class="avatar">${initials(p.name)}</div><div><div style="font-weight:500">${p.name}</div></div></div></td>
+      <td>${p.phone}</td>
+      <td>${p.age?p.age+' yrs':'—'} ${p.gender?'/ '+p.gender:''}</td>
+      <td>${p.blood_group?`<span class="badge badge-red">${p.blood_group}</span>`:'—'}</td>
+      <td style="color:var(--t2)">${p.address||'—'}</td>
+      <td style="color:var(--t3);font-size:12px">${fmtDate(p.created_at)}</td>
+    </tr>`).join('')
+}
+
+function showAddPatient() { document.getElementById('add-patient-modal').style.display='flex' }
+
+async function addPatient() {
+  const name=document.getElementById('ap-name').value.trim()
+  const phone=document.getElementById('ap-phone').value.trim()
+  if(!name||!phone){showToast('Name and phone required','error');return}
+  const res = await fetch(`${API}/api/patients`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,age:document.getElementById('ap-age').value||null,gender:document.getElementById('ap-gender').value,blood_group:document.getElementById('ap-blood').value,address:document.getElementById('ap-address').value})})
+  const data = await res.json()
+  if(data.ok){showToast('Patient registered!','success');closeModal('add-patient-modal');loadPatients()}
+  else showToast(data.error||'Failed','error')
+}
+
+// ── Appointments ───────────────────────────────────────────
+async function loadAppointments() {
+  const d = document.getElementById('appt-date-filter').value || today()
+  const data = await fetch(`${API}/api/appointments?date=${d}`).then(r=>r.json()).catch(()=>[])
+  const el = document.getElementById('appts-list')
+  if(!data.length){el.innerHTML='<div class="empty"><div class="empty-icon">📅</div>No appointments for this date</div>';return}
+  el.innerHTML = data.map(a=>`
+    <div class="card" style="display:flex;align-items:center;gap:16px;padding:14px 18px;margin-bottom:10px">
+      <div style="text-align:center;min-width:56px"><div style="font-family:'Syne',sans-serif;font-weight:700;font-size:17px">${fmtTime(a.scheduled_at)}</div></div>
+      <div style="width:1px;height:36px;background:var(--b2)"></div>
+      <div style="flex:1"><div style="font-weight:500">${a.patient_name||'—'}</div><div style="font-size:12px;color:var(--t3);margin-top:2px">${a.reason||'General checkup'} · ${a.patient_phone||''}</div></div>
+      <span class="badge badge-${a.status==='scheduled'?'blue':a.status==='completed'?'green':a.status==='cancelled'?'red':'yellow'}">${a.status}</span>
+    </div>`).join('')
+}
+
+function showBookModal(){document.getElementById('book-modal').style.display='flex'}
+
+async function bookViaAgent(){
+  const phone=document.getElementById('bk-phone').value.trim()
+  const time=document.getElementById('bk-time').value
+  const reason=document.getElementById('bk-reason').value.trim()
+  if(!phone||!time){showToast('Phone and time required','error');return}
+  closeModal('book-modal')
+  showPage('agent')
+  quickSend(`Book an appointment for patient with phone ${phone} at ${time}${reason?' for '+reason:''}`)
+}
+
+// ── Prescriptions ──────────────────────────────────────────
+async function loadPrescriptions() {
+  const data = await fetch(`${API}/api/prescriptions`).then(r=>r.json()).catch(()=>[])
+  const el = document.getElementById('rx-list')
+  if(!data.length){el.innerHTML='<div class="empty"><div class="empty-icon">💊</div>No prescriptions yet. Ask the AI agent to write one.</div>';return}
+  el.innerHTML = data.map(r=>`
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+        <div><div style="font-weight:600;font-size:15px">${r.patient_name||'—'}</div><div style="font-size:12px;color:var(--t3);margin-top:2px">${fmtDate(r.created_at)}</div></div>
+        <span class="badge badge-blue">${r.diagnosis||'Prescription'}</span>
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--b2);border-radius:var(--rs);padding:12px;font-size:13px;color:var(--t2);white-space:pre-line">${r.medicines||'—'}</div>
+      ${r.notes?`<div style="font-size:12px;color:var(--t3);margin-top:8px">📝 ${r.notes}</div>`:''}
+    </div>`).join('')
+}
+
+// ── Messages ───────────────────────────────────────────────
+async function loadMessages() {
+  const data = await fetch(`${API}/api/messages`).then(r=>r.json()).catch(()=>[])
+  const tb = document.getElementById('messages-table')
+  if(!data.length){tb.innerHTML='<tr><td colspan="4"><div class="empty"><div class="empty-icon">💬</div>No messages yet</div></td></tr>';return}
+  tb.innerHTML = data.map(m=>`
+    <tr>
+      <td><div style="font-weight:500">${m.patient_name||'—'}</div><div style="font-size:11.5px;color:var(--t3)">${m.role}</div></td>
+      <td>${m.patient_phone||'—'}</td>
+      <td style="max-width:300px;white-space:pre-wrap;font-size:13px">${m.content||'—'}</td>
+      <td style="color:var(--t3);font-size:12px;white-space:nowrap">${fmtDate(m.created_at)}</td>
+    </tr>`).join('')
+}
+
+async function sendPatientMessage() {
+  const name=document.getElementById('pm-name').value.trim()
+  const phone=document.getElementById('pm-phone').value.trim()
+  const msg=document.getElementById('pm-msg').value.trim()
+  if(!name||!phone||!msg){showToast('Fill all fields','error');return}
+  const res = await fetch(`${API}/patient-message`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,message:msg})})
+  const data = await res.json()
+  showToast('AI replied: '+data.reply.substring(0,60)+'...','success')
+  document.getElementById('pm-msg').value=''
+  loadMessages()
+}
+
+// ── WhatsApp ───────────────────────────────────────────────
+const TEMPLATES_WA = {
+  reminder: 'Namaste [Name] ji! 🙏 Your appointment is scheduled for tomorrow. Please arrive 10 minutes early. Reply CONFIRM to confirm. — Dr. Clinic',
+  followup: 'Namaste [Name] ji! 🙏 Hope you are feeling better. It has been a week since your visit. Please let us know if you have any concerns. — Dr. Clinic',
+  report: 'Namaste [Name] ji! 🙏 Your test reports are ready for collection at our clinic. Please visit us at your earliest convenience. — Dr. Clinic',
+  holiday: 'Namaste! 🙏 Our clinic will be closed on [Date] due to a holiday. For emergencies, please call [Number]. We apologize for the inconvenience. — Dr. Clinic'
+}
+
+function setTemplate(t) {
+  const msg = TEMPLATES_WA[t]
+  document.getElementById('wa-msg').value = msg
+  document.getElementById('wa-preview').textContent = msg
+}
+
+async function sendWhatsApp() {
+  const phone=document.getElementById('wa-phone').value.trim()
+  const msg=document.getElementById('wa-msg').value.trim()
+  if(!phone||!msg){showToast('Phone and message required','error');return}
+  const res = await fetch(`${API}/api/whatsapp/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,message:msg})})
+  const data = await res.json()
+  if(data.ok) showToast('WhatsApp message sent!','success')
+  else showToast(data.error||data.message||'Failed (check WATI config)','error')
+}
+
+// ── Utilities ──────────────────────────────────────────────
+function initials(name){return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}
+function fmtTime(dt){try{return new Date(dt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}catch{return dt}}
+function fmtDate(dt){try{return new Date(dt).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}catch{return dt}}
+
+function closeModal(id){document.getElementById(id).style.display='none'}
+
+function showToast(msg,type='success'){
+  const t=document.createElement('div')
+  t.className='toast'
+  t.style.borderColor=type==='success'?'rgba(61,255,122,.3)':'rgba(255,77,106,.3)'
+  t.innerHTML=`<span style="color:${type==='success'?'var(--accent)':'var(--red)'}">${type==='success'?'✓':'✕'}</span> ${msg}`
+  document.body.appendChild(t)
+  setTimeout(()=>t.remove(),3500)
+}
+
+// ── Init ───────────────────────────────────────────────────
+document.getElementById('appt-date-filter') && (document.getElementById('appt-date-filter').value = today())
+loadDashboard()
+</script>
+</body>
+</html>
