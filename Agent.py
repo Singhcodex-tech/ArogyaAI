@@ -30,7 +30,17 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 WATI_TOKEN   = os.getenv("WATI_TOKEN", "")
 WATI_URL     = os.getenv("WATI_URL", "")   # e.g. https://live-mt-server.wati.io/YOUR_INSTANCE
 
-groq_client  = Groq(api_key=GROQ_API_KEY)
+# Lazy init — don't crash at startup if key missing
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        key = os.getenv("GROQ_API_KEY", "")
+        if not key:
+            raise ValueError("GROQ_API_KEY environment variable not set")
+        _groq_client = Groq(api_key=key)
+    return _groq_client
 
 # ── Database ────────────────────────────────────────────────
 DB = "clinic.db"
@@ -144,7 +154,7 @@ def call_groq(messages: list, temperature: float = 0.3) -> str:
     last_error = ""
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            resp = groq_client.chat.completions.create(
+            resp = get_groq_client().chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
@@ -393,8 +403,13 @@ async def agent_endpoint(req: Request):
     context = body.get("context", "doctor")
     if not message:
         return JSONResponse({"error": "No message"}, status_code=400)
-    result = run_agent(message, context)
-    return JSONResponse(result)
+    try:
+        result = run_agent(message, context)
+        return JSONResponse(result)
+    except ValueError as e:
+        return JSONResponse({"error": str(e), "response": "⚠ Server misconfigured: GROQ_API_KEY not set in Railway environment variables."}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e), "response": f"⚠ Agent error: {str(e)}"}, status_code=500)
 
 
 @app.post("/patient-message")
