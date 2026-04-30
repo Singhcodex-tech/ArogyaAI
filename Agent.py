@@ -30,10 +30,23 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 WATI_TOKEN   = os.getenv("WATI_TOKEN", "")
 WATI_URL     = os.getenv("WATI_URL", "")   # e.g. https://live-mt-server.wati.io/YOUR_INSTANCE
 
-groq_client  = Groq(api_key=GROQ_API_KEY)
+# Lazy init — avoids crash if key missing at startup
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        key = os.getenv("GROQ_API_KEY", "")
+        if not key:
+            raise ValueError("GROQ_API_KEY not set in environment")
+        _groq_client = Groq(api_key=key)
+    return _groq_client
 
 # ── Database ────────────────────────────────────────────────
-DB = "clinic.db"
+# Use Railway persistent volume at /data, fallback to local for dev
+DATA_DIR = os.getenv("DATA_DIR", "/data" if os.path.exists("/data") else ".")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB = os.path.join(DATA_DIR, "clinic.db")
 
 def db():
     conn = sqlite3.connect(DB)
@@ -144,7 +157,7 @@ def call_groq(messages: list, temperature: float = 0.3) -> str:
     last_error = ""
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            resp = groq_client.chat.completions.create(
+            resp = get_groq_client().chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
@@ -310,8 +323,7 @@ async def send_whatsapp_async(phone: str, message: str) -> dict:
 
 
 def send_whatsapp(phone: str, message: str) -> dict:
-    import asyncio
-    import concurrent.futures
+    import asyncio, concurrent.futures
     try:
         asyncio.get_running_loop()
         # Inside FastAPI event loop — run in separate thread
@@ -319,7 +331,6 @@ def send_whatsapp(phone: str, message: str) -> dict:
             future = pool.submit(asyncio.run, send_whatsapp_async(phone, message))
             return future.result(timeout=15)
     except RuntimeError:
-        # No running loop — safe to call directly
         return asyncio.run(send_whatsapp_async(phone, message))
 
 
