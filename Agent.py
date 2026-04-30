@@ -30,23 +30,10 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 WATI_TOKEN   = os.getenv("WATI_TOKEN", "")
 WATI_URL     = os.getenv("WATI_URL", "")   # e.g. https://live-mt-server.wati.io/YOUR_INSTANCE
 
-# Lazy init — avoids crash if key missing at startup
-_groq_client = None
-
-def get_groq_client():
-    global _groq_client
-    if _groq_client is None:
-        key = os.getenv("GROQ_API_KEY", "")
-        if not key:
-            raise ValueError("GROQ_API_KEY not set in environment")
-        _groq_client = Groq(api_key=key)
-    return _groq_client
+groq_client  = Groq(api_key=GROQ_API_KEY)
 
 # ── Database ────────────────────────────────────────────────
-# Use Railway persistent volume at /data, fallback to local for dev
-DATA_DIR = os.getenv("DATA_DIR", "/data" if os.path.exists("/data") else ".")
-os.makedirs(DATA_DIR, exist_ok=True)
-DB = os.path.join(DATA_DIR, "clinic.db")
+DB = "clinic.db"
 
 def db():
     conn = sqlite3.connect(DB)
@@ -146,7 +133,13 @@ For prescriptions, medicines should be a list like:
 
 Be proactive. If doctor says 'remind all patients tomorrow', do it.
 If patient asks about symptoms, give basic advice and suggest booking.
-Always be warm, professional, and efficient."""
+Always be warm, professional, and efficient.
+
+CRITICAL RULES:
+- scheduled_at MUST always be ISO format: YYYY-MM-DD HH:MM (e.g. 2026-04-30 10:30)
+- When sending reminders, ALWAYS call get_appointments first with the correct date param
+- For "today's reminders" use today's date. For "tomorrow's reminders" use tomorrow's date
+- After get_appointments returns the list, send_whatsapp to EACH patient in the list"""
 
 
 PRIMARY_MODEL  = "llama-3.3-70b-versatile"
@@ -157,7 +150,7 @@ def call_groq(messages: list, temperature: float = 0.3) -> str:
     last_error = ""
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            resp = get_groq_client().chat.completions.create(
+            resp = groq_client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
@@ -236,9 +229,17 @@ def execute_tool(action: str, params: dict) -> str:
             if not patient:
                 return json.dumps({"ok": False, "message": "Patient not found. Register first."})
             aid = str(uuid.uuid4())
+            # Normalize scheduled_at to ISO format YYYY-MM-DD HH:MM
+            raw_time = params.get("scheduled_at", "")
+            try:
+                from dateutil import parser as dateparser
+                parsed_dt = dateparser.parse(str(raw_time))
+                scheduled_at = parsed_dt.strftime("%Y-%m-%d %H:%M") if parsed_dt else raw_time
+            except Exception:
+                scheduled_at = raw_time
             conn.execute(
                 "INSERT INTO appointments (id, patient_id, patient_name, patient_phone, scheduled_at, reason) VALUES (?,?,?,?,?,?)",
-                (aid, patient["id"], patient["name"], phone, params.get("scheduled_at"), params.get("reason", "General checkup"))
+                (aid, patient["id"], patient["name"], phone, scheduled_at, params.get("reason", "General checkup"))
             )
             conn.commit()
             return json.dumps({"ok": True, "appointment_id": aid, "patient": patient["name"], "time": params.get("scheduled_at")})
@@ -323,15 +324,8 @@ async def send_whatsapp_async(phone: str, message: str) -> dict:
 
 
 def send_whatsapp(phone: str, message: str) -> dict:
-    import asyncio, concurrent.futures
-    try:
-        asyncio.get_running_loop()
-        # Inside FastAPI event loop — run in separate thread
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, send_whatsapp_async(phone, message))
-            return future.result(timeout=15)
-    except RuntimeError:
-        return asyncio.run(send_whatsapp_async(phone, message))
+    import asyncio
+    return asyncio.run(send_whatsapp_async(phone, message))
 
 
 # ════════════════════════════════════════════════════════════

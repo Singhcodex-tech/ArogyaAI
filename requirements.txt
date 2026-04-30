@@ -3,3 +3,4 @@ uvicorn
 groq
 httpx
 python-dotenv
+python-dateutil
