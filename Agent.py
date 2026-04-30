@@ -30,10 +30,23 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 WATI_TOKEN   = os.getenv("WATI_TOKEN", "")
 WATI_URL     = os.getenv("WATI_URL", "")   # e.g. https://live-mt-server.wati.io/YOUR_INSTANCE
 
-groq_client  = Groq(api_key=GROQ_API_KEY)
+# Lazy init — avoids crash if key missing at startup
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        key = os.getenv("GROQ_API_KEY", "")
+        if not key:
+            raise ValueError("GROQ_API_KEY not set in environment")
+        _groq_client = Groq(api_key=key)
+    return _groq_client
 
 # ── Database ────────────────────────────────────────────────
-DB = "clinic.db"
+# Use Railway persistent volume at /data, fallback to local for dev
+DATA_DIR = os.getenv("DATA_DIR", "/data" if os.path.exists("/data") else ".")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB = os.path.join(DATA_DIR, "clinic.db")
 
 def db():
     conn = sqlite3.connect(DB)
@@ -133,13 +146,7 @@ For prescriptions, medicines should be a list like:
 
 Be proactive. If doctor says 'remind all patients tomorrow', do it.
 If patient asks about symptoms, give basic advice and suggest booking.
-Always be warm, professional, and efficient.
-
-CRITICAL RULES:
-- scheduled_at MUST always be ISO format: YYYY-MM-DD HH:MM (e.g. 2026-04-30 10:30)
-- When sending reminders, ALWAYS call get_appointments first with the correct date param
-- For "today's reminders" use today's date. For "tomorrow's reminders" use tomorrow's date
-- After get_appointments returns the list, send_whatsapp to EACH patient in the list"""
+Always be warm, professional, and efficient."""
 
 
 PRIMARY_MODEL  = "llama-3.3-70b-versatile"
@@ -150,7 +157,7 @@ def call_groq(messages: list, temperature: float = 0.3) -> str:
     last_error = ""
     for model in (PRIMARY_MODEL, FALLBACK_MODEL):
         try:
-            resp = groq_client.chat.completions.create(
+            resp = get_groq_client().chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
@@ -189,7 +196,7 @@ def parse_agent_response(raw: str) -> dict:
 # TOOL EXECUTOR — runs whatever action agent decides
 # ════════════════════════════════════════════════════════════
 
-def execute_tool(action: str, params: dict) -> str:
+async def execute_tool(action: str, params: dict) -> str:
     conn = db()
     try:
         # ── get_stats ──────────────────────────────────────
@@ -229,17 +236,9 @@ def execute_tool(action: str, params: dict) -> str:
             if not patient:
                 return json.dumps({"ok": False, "message": "Patient not found. Register first."})
             aid = str(uuid.uuid4())
-            # Normalize scheduled_at to ISO format YYYY-MM-DD HH:MM
-            raw_time = params.get("scheduled_at", "")
-            try:
-                from dateutil import parser as dateparser
-                parsed_dt = dateparser.parse(str(raw_time))
-                scheduled_at = parsed_dt.strftime("%Y-%m-%d %H:%M") if parsed_dt else raw_time
-            except Exception:
-                scheduled_at = raw_time
             conn.execute(
                 "INSERT INTO appointments (id, patient_id, patient_name, patient_phone, scheduled_at, reason) VALUES (?,?,?,?,?,?)",
-                (aid, patient["id"], patient["name"], phone, scheduled_at, params.get("reason", "General checkup"))
+                (aid, patient["id"], patient["name"], phone, params.get("scheduled_at"), params.get("reason", "General checkup"))
             )
             conn.commit()
             return json.dumps({"ok": True, "appointment_id": aid, "patient": patient["name"], "time": params.get("scheduled_at")})
@@ -288,7 +287,7 @@ def execute_tool(action: str, params: dict) -> str:
 
         # ── send_whatsapp ──────────────────────────────────
         elif action == "send_whatsapp":
-            result = send_whatsapp(params.get("phone"), params.get("message", ""))
+            result = await send_whatsapp(params.get("phone"), params.get("message", ""))
             return json.dumps(result)
 
         else:
@@ -323,16 +322,15 @@ async def send_whatsapp_async(phone: str, message: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def send_whatsapp(phone: str, message: str) -> dict:
-    import asyncio
-    return asyncio.run(send_whatsapp_async(phone, message))
+async def send_whatsapp(phone: str, message: str) -> dict:
+    return await send_whatsapp_async(phone, message)
 
 
 # ════════════════════════════════════════════════════════════
 # MAIN AGENT RUNNER
 # ════════════════════════════════════════════════════════════
 
-def run_agent(user_message: str, context: str = "doctor") -> dict:
+async def run_agent(user_message: str, context: str = "doctor") -> dict:
     """
     Main agent loop:
     1. Send message to Groq AI
@@ -357,7 +355,7 @@ def run_agent(user_message: str, context: str = "doctor") -> dict:
 
     # Step 2: Execute tool if agent decided to use one
     if agent_resp.get("action") and agent_resp["action"] != "null":
-        tool_result = execute_tool(agent_resp["action"], agent_resp.get("action_input") or {})
+        tool_result = await execute_tool(agent_resp["action"], agent_resp.get("action_input") or {})
 
         # Step 3: Feed tool result back for final natural language response
         messages.append({"role": "assistant", "content": raw})
@@ -374,7 +372,7 @@ def run_agent(user_message: str, context: str = "doctor") -> dict:
     # Step 4: Send WhatsApp if agent decided to
     whatsapp_sent = False
     if agent_resp.get("send_whatsapp") and agent_resp.get("whatsapp_phone") and agent_resp.get("whatsapp_message"):
-        wa_result = send_whatsapp(agent_resp["whatsapp_phone"], agent_resp["whatsapp_message"])
+        wa_result = await send_whatsapp(agent_resp["whatsapp_phone"], agent_resp["whatsapp_message"])
         whatsapp_sent = wa_result.get("ok", False)
 
     # Step 5: Log task
@@ -407,8 +405,13 @@ async def agent_endpoint(req: Request):
     context = body.get("context", "doctor")
     if not message:
         return JSONResponse({"error": "No message"}, status_code=400)
-    result = run_agent(message, context)
-    return JSONResponse(result)
+    try:
+        result = await run_agent(message, context)
+        return JSONResponse(result)
+    except ValueError as e:
+        return JSONResponse({"error": str(e), "response": f"⚠ Config error: {e}"}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e), "response": f"⚠ Agent error: {str(e)}"}, status_code=500)
 
 
 @app.post("/patient-message")
@@ -432,11 +435,11 @@ async def patient_message(req: Request):
 
     # Let agent handle it
     full_message = f"Patient {name} (phone: {phone}) says: {message}"
-    result = run_agent(full_message, context="patient")
+    result = await run_agent(full_message, context="patient")
 
     # Auto-reply via WhatsApp
     if result.get("response") and phone:
-        send_whatsapp(phone, result["response"])
+        await send_whatsapp(phone, result["response"])
 
     return JSONResponse({"reply": result["response"], "whatsapp_sent": True})
 
