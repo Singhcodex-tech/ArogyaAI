@@ -4,3 +4,4 @@ groq
 httpx
 python-dotenv
 python-dateutil
+twilio
