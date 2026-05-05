@@ -410,6 +410,20 @@ input[type="date"]{color-scheme:light}
   font-size:12.5px;line-height:1.7;
 }
 
+/* ── Voice mic button ── */
+.mic-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:7px 14px;border-radius:var(--r);
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;
+  font-family:'IBM Plex Sans',sans-serif;
+  transition:all .12s;
+}
+.mic-btn:hover{background:var(--surface2)}
+.mic-btn.recording{background:var(--red-light);color:var(--red);border-color:#fcc;animation:pulse-rec 1s infinite}
+@keyframes pulse-rec{0%,100%{opacity:1}50%{opacity:.6}}
+.mic-btn svg{width:14px;height:14px;flex-shrink:0}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -650,6 +664,10 @@ input[type="date"]{color-scheme:light}
         <div class="page-title">Prescriptions</div>
         <div class="page-sub">All written prescriptions</div>
       </div>
+      <button class="btn btn-primary" onclick="showNewRxModal()">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Prescription
+      </button>
     </div>
     <div class="content-area">
       <div id="rx-list"></div>
@@ -782,9 +800,201 @@ input[type="date"]{color-scheme:light}
   </div>
 </div>
 
+<!-- ── NEW PRESCRIPTION MODAL ── -->
+<div class="modal-overlay" id="new-rx-modal" style="display:none">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <div class="modal-title">New Prescription</div>
+      <span class="modal-close" onclick="closeModal('new-rx-modal')">✕</span>
+    </div>
+
+    <!-- Patient selector -->
+    <div class="form-field" style="margin-bottom:14px">
+      <label>Patient *</label>
+      <select id="rx-patient-select">
+        <option value="">Loading patients…</option>
+      </select>
+    </div>
+
+    <!-- Diagnosis with voice -->
+    <div class="form-field" style="margin-bottom:6px">
+      <label>Diagnosis *</label>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <input id="rx-diagnosis" placeholder="e.g. Acute Pharyngitis, Hypertension…" style="flex:1"/>
+        <button class="mic-btn" id="mic-diagnosis" onclick="startVoice('rx-diagnosis','mic-diagnosis')" title="Speak diagnosis">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Medicines with voice -->
+    <div class="form-field" style="margin-bottom:6px">
+      <label>Medicines *</label>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <textarea id="rx-medicines" placeholder="e.g.&#10;Paracetamol 500mg - 1 tab twice daily for 5 days&#10;Cetirizine 10mg - 1 tab at night for 3 days" style="flex:1;min-height:90px;resize:none"></textarea>
+        <button class="mic-btn" id="mic-medicines" onclick="startVoice('rx-medicines','mic-medicines')" title="Speak medicines">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+      </div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:3px">Tap mic to dictate — voice processed by Whisper AI</div>
+    </div>
+
+    <!-- Notes -->
+    <div class="form-field" style="margin-bottom:0">
+      <label>Notes (optional)</label>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <input id="rx-notes" placeholder="e.g. Review after 5 days, avoid cold food" style="flex:1"/>
+        <button class="mic-btn" id="mic-notes" onclick="startVoice('rx-notes','mic-notes')" title="Speak notes">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('new-rx-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitPrescription()">Save Prescription</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = 'https://arogyaai-production-5f24.up.railway.app'
 let agentBusy = false
+
+// ── Voice recording state ──
+let _mediaRecorder = null
+let _audioChunks   = []
+let _activeMicId   = null
+
+async function startVoice(targetId, micId) {
+  // If already recording this field — stop
+  if (_activeMicId === micId && _mediaRecorder && _mediaRecorder.state === 'recording') {
+    _mediaRecorder.stop()
+    return
+  }
+  // Stop any other active recording
+  if (_mediaRecorder && _mediaRecorder.state === 'recording') {
+    _mediaRecorder.stop()
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    _audioChunks = []
+    _activeMicId = micId
+
+    const btn = document.getElementById(micId)
+    btn.classList.add('recording')
+    btn.title = 'Click to stop recording'
+
+    // Pick supported mime type
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg'
+
+    _mediaRecorder = new MediaRecorder(stream, { mimeType })
+    _mediaRecorder.ondataavailable = e => { if (e.data.size > 0) _audioChunks.push(e.data) }
+    _mediaRecorder.onstop = async () => {
+      btn.classList.remove('recording')
+      btn.title = 'Speak'
+      btn.innerHTML = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>`
+      stream.getTracks().forEach(t => t.stop())
+      _activeMicId = null
+
+      if (_audioChunks.length === 0) return
+
+      // Show spinner on button
+      btn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="animation:spin .8s linear infinite"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`
+      btn.disabled = true
+
+      const ext = mimeType.includes('ogg') ? 'ogg' : 'webm'
+      const blob = new Blob(_audioChunks, { type: mimeType })
+      const formData = new FormData()
+      formData.append('file', blob, `voice.${ext}`)
+
+      try {
+        const res  = await fetch(`${API}/api/transcribe`, { method: 'POST', body: formData })
+        const data = await res.json()
+        if (data.ok && data.text) {
+          const el = document.getElementById(targetId)
+          // Append if textarea already has content
+          if (el.tagName === 'TEXTAREA' && el.value.trim()) {
+            el.value += '\n' + data.text
+          } else {
+            el.value = data.text
+          }
+          showToast('Voice transcribed ✓')
+        } else {
+          showToast(data.error || 'Transcription failed', 'error')
+        }
+      } catch(e) {
+        showToast('Transcription error: ' + e.message, 'error')
+      } finally {
+        // Restore mic icon
+        btn.disabled = false
+        btn.title = 'Speak'
+        btn.innerHTML = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`
+      }
+    }
+
+    _mediaRecorder.start()
+    // Auto-stop after 30s
+    setTimeout(() => { if (_mediaRecorder && _mediaRecorder.state === 'recording') _mediaRecorder.stop() }, 30000)
+
+  } catch(e) {
+    showToast('Microphone access denied: ' + e.message, 'error')
+  }
+}
+
+// Add spin keyframe dynamically
+const spinStyle = document.createElement('style')
+spinStyle.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}'
+document.head.appendChild(spinStyle)
+
+// ── Prescription modal ──
+async function showNewRxModal() {
+  // Load patients into select
+  const sel = document.getElementById('rx-patient-select')
+  sel.innerHTML = '<option value="">Loading…</option>'
+  try {
+    const patients = await fetch(`${API}/api/patients`).then(r => r.json())
+    if (!patients.length) {
+      sel.innerHTML = '<option value="">No patients registered yet</option>'
+    } else {
+      sel.innerHTML = '<option value="">Select patient…</option>' +
+        patients.map(p => `<option value="${p.id}">${p.name} — ${p.phone}</option>`).join('')
+    }
+  } catch(e) {
+    sel.innerHTML = '<option value="">Could not load patients</option>'
+  }
+  // Clear fields
+  ;['rx-diagnosis','rx-medicines','rx-notes'].forEach(id => document.getElementById(id).value = '')
+  document.getElementById('new-rx-modal').style.display = 'flex'
+}
+
+async function submitPrescription() {
+  const patient_id = document.getElementById('rx-patient-select').value
+  const diagnosis  = document.getElementById('rx-diagnosis').value.trim()
+  const medicines  = document.getElementById('rx-medicines').value.trim()
+  const notes      = document.getElementById('rx-notes').value.trim()
+
+  if (!patient_id)  { showToast('Select a patient', 'error'); return }
+  if (!diagnosis)   { showToast('Diagnosis required', 'error'); return }
+  if (!medicines)   { showToast('Medicines required', 'error'); return }
+
+  const res  = await fetch(`${API}/api/prescriptions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patient_id, diagnosis, medicines, notes })
+  })
+  const data = await res.json()
+  if (data.ok) {
+    showToast(`Prescription saved for ${data.patient_name}`)
+    closeModal('new-rx-modal')
+    loadPrescriptions()
+  } else {
+    showToast(data.error || 'Failed to save', 'error')
+  }
+}
 
 // ── Navigation ──
 function showPage(name) {

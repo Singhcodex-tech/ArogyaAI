@@ -5,9 +5,9 @@
 #      uvicorn agent:app --reload
 # ============================================================
 
-import os, json, sqlite3, uuid, httpx
+import os, json, sqlite3, uuid, httpx, tempfile
 from datetime import datetime, date
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -530,6 +530,64 @@ async def add_patient(req: Request):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     finally:
         conn.close()
+
+
+@app.post("/api/prescriptions")
+async def add_prescription(req: Request):
+    """Direct prescription creation without going through agent."""
+    body = await req.json()
+    patient_id = body.get("patient_id", "").strip()
+    diagnosis  = body.get("diagnosis", "").strip()
+    medicines  = body.get("medicines", "").strip()
+    notes      = body.get("notes", "").strip()
+
+    if not patient_id or not diagnosis or not medicines:
+        return JSONResponse({"ok": False, "error": "patient_id, diagnosis, and medicines are required"}, status_code=400)
+
+    conn = db()
+    try:
+        patient = conn.execute("SELECT * FROM patients WHERE id=?", (patient_id,)).fetchone()
+        if not patient:
+            return JSONResponse({"ok": False, "error": "Patient not found"}, status_code=404)
+        rx_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO prescriptions (id, patient_id, patient_name, diagnosis, medicines, notes) VALUES (?,?,?,?,?,?)",
+            (rx_id, patient_id, patient["name"], diagnosis, medicines, notes)
+        )
+        conn.commit()
+        return JSONResponse({"ok": True, "id": rx_id, "patient_name": patient["name"]})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    finally:
+        conn.close()
+
+
+@app.post("/api/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe voice using Groq Whisper — used by prescription voice input."""
+    try:
+        client = get_groq_client()
+        contents = await file.read()
+        # Write to temp file — Groq SDK needs a file-like with name
+        suffix = "." + (file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "webm")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+        import asyncio
+        loop = asyncio.get_event_loop()
+        def _transcribe():
+            with open(tmp_path, "rb") as f:
+                result = client.audio.transcriptions.create(
+                    model="whisper-large-v3",
+                    file=(file.filename or "audio.webm", f),
+                    language="en",
+                )
+            return result.text
+        text = await loop.run_in_executor(None, _transcribe)
+        os.unlink(tmp_path)
+        return JSONResponse({"ok": True, "text": text})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.post("/api/whatsapp/send")
